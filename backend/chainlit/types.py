@@ -68,3 +68,8 @@ class GetConversationsRequest(BaseModel):
 class Theme(str, Enum):
     light = "light"
     dark = "dark"
+
+
+class AzureADTenancyType(str, Enum):
+    SINGLE = "single"
+    MULTI = "multi"

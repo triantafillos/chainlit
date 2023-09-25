@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple
 
 import aiohttp
 from chainlit.client.base import AppUser
+from chainlit.types import AzureADTenancyType
 from fastapi import HTTPException
 
 
@@ -137,17 +138,33 @@ class AzureADOAuthProvider(OAuthProvider):
         "OAUTH_AZURE_AD_CLIENT_SECRET",
         "OAUTH_AZURE_AD_TENANT_ID",
     ]
-    authorize_url = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+    is_multi_tenant = (
+        os.environ.get("OAUTH_AZURE_AD_TENANCY_TYPE") == AzureADTenancyType.MULTI.value
+    )
+    tenant_id = os.environ.get("OAUTH_AZURE_AD_TENANT_ID")
+    authorize_url = (
+        "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+        if is_multi_tenant
+        else f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/authorize"
+    )
 
     def __init__(self):
         self.client_id = os.environ.get("OAUTH_AZURE_AD_CLIENT_ID")
         self.client_secret = os.environ.get("OAUTH_AZURE_AD_CLIENT_SECRET")
-        self.authorize_params = {
-            "tenant": os.environ.get("OAUTH_AZURE_AD_TENANT_ID"),
-            "response_type": "code",
-            "scope": "https://graph.microsoft.com/User.Read",
-            "response_mode": "query",
-        }
+
+        if self.is_multi_tenant:
+            self.authorize_params = {
+                "tenant": self.tenant_id,
+                "response_type": "code",
+                "scope": "https://graph.microsoft.com/User.Read",
+                "response_mode": "query",
+            }
+        else:
+            self.authorize_params = {
+                "response_type": "code",
+                "scope": "https://graph.microsoft.com/User.Read",
+                "response_mode": "query",
+            }
 
     async def get_token(self, code: str, url: str):
         payload = {
@@ -157,9 +174,14 @@ class AzureADOAuthProvider(OAuthProvider):
             "grant_type": "authorization_code",
             "redirect_uri": url,
         }
+        token_url = (
+            "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+            if self.is_multi_tenant
+            else f"https://login.microsoftonline.com/{self.tenant_id}/oauth2/v2.0/token"
+        )
         async with aiohttp.ClientSession(raise_for_status=True) as session:
             async with session.post(
-                "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+                token_url,
                 data=payload,
             ) as result:
                 json = await result.json()
